@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   router,
@@ -47,6 +47,16 @@ export default function DetailsScreen() {
     cycleRepeat,
     addToQueue,
   } = useMusic();
+  const followsPlaybackRef = useRef(currentSong?.id === songId);
+
+  useEffect(() => {
+    if (!currentSong) return;
+    if (currentSong.id === songId) {
+      followsPlaybackRef.current = true;
+    } else if (followsPlaybackRef.current) {
+      router.setParams({ id: currentSong.id });
+    }
+  }, [currentSong, songId]);
 
   const formatTime = (milliseconds) => {
     const seconds = Math.floor((milliseconds || 0) / 1000);
@@ -171,8 +181,11 @@ export default function DetailsScreen() {
             <Pressable
               style={styles.queueButton}
               onPress={() => {
-                addToQueue(song);
-                Alert.alert("Added to Queue", `${song.title} was added to your queue.`);
+                if (addToQueue(song)) {
+                  Alert.alert("Added to Queue", `${song.title} was added to your queue.`);
+                } else {
+                  Alert.alert("Already in Queue", `${song.title} is already in your queue.`);
+                }
               }}
             >
               <Ionicons name="add-circle-outline" size={20} color="#00FF66" />
@@ -193,8 +206,7 @@ export default function DetailsScreen() {
         <Pressable
           style={styles.playThisButton}
           onPress={() => {
-            const index = songs.findIndex((item) => item.id === song.id);
-            playSong(index);
+            playSong(song);
           }}
         >
           <Ionicons name="play" size={22} color="#000" />

@@ -25,8 +25,7 @@ export default function HomeScreen() {
       ]}
       onPress={() =>
         {
-          const index = songs.findIndex((item) => item.id === song.id);
-          playSong(index);
+          playSong(song);
           router.push({
             pathname: "/details/[id]",
             params: { id: song.id },

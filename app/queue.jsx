@@ -24,7 +24,7 @@ export default function QueueScreen() {
           <View style={[styles.row, index === currentIndex && styles.activeRow]}>
             <Pressable
               style={styles.songInfo}
-              onPress={() => playSong(index)}
+              onPress={() => playSong(item)}
             >
               <Image source={item.image} style={styles.artwork} />
               <View style={styles.textInfo}>
@@ -32,13 +32,13 @@ export default function QueueScreen() {
                 <Text numberOfLines={1} style={styles.artist}>{item.artist}</Text>
               </View>
             </Pressable>
-            {index === currentIndex ? (
-              <Ionicons name="musical-notes" size={22} color="#00FF66" />
-            ) : (
-              <Pressable hitSlop={12} onPress={() => removeFromQueue(index)}>
+            <Pressable hitSlop={12} onPress={() => removeFromQueue(index)}>
+              {index === currentIndex ? (
+                <Ionicons name="musical-notes" size={22} color="#00FF66" />
+              ) : (
                 <Ionicons name="trash-outline" size={22} color="#777" />
-              </Pressable>
-            )}
+              )}
+            </Pressable>
           </View>
         )}
         ListFooterComponent={
