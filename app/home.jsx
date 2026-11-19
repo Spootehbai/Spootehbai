@@ -10,8 +10,11 @@ import {
 
 import { router } from "expo-router";
 import { songs } from "../data/songs";
+import { MiniPlayer } from "../components/MiniPlayer";
+import { useMusic } from "../context/MusicContext";
 
 export default function HomeScreen() {
+  const { playSong } = useMusic();
 
   const renderSong = ({ item: song }) => (
     <Pressable
@@ -21,10 +24,14 @@ export default function HomeScreen() {
         pressed && styles.pressed,
       ]}
       onPress={() =>
-        router.push({
-          pathname: "/details/[id]",
-          params: { id: song.id },
-        })
+        {
+          const index = songs.findIndex((item) => item.id === song.id);
+          playSong(index);
+          router.push({
+            pathname: "/details/[id]",
+            params: { id: song.id },
+          });
+        }
       }
     >
       <Image
@@ -68,6 +75,7 @@ export default function HomeScreen() {
           </View>
         }
       />
+      <MiniPlayer />
     </View>
   );
 }
@@ -81,7 +89,7 @@ const styles = StyleSheet.create({
   list: {
     paddingTop: 60,
     paddingHorizontal: 20,
-    paddingBottom: 30,
+    paddingBottom: 100,
   },
 
   title: {
