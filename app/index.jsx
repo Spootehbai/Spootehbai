@@ -1,171 +1,135 @@
-import { router } from "expo-router";
-
+import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  Image,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
-
+import { router } from "expo-router";
 import { AppButton } from "../components/AppButton.jsx";
+import { supabase } from "../lib/supabase";
+import { colors, spacing, radius } from "../constants/theme";
 
-import {
-  colors,
-  spacing,
-  radius,
-} from "../constants/theme";
+export default function WelcomeScreen() {
+  const [checkingSession, setCheckingSession] = useState(true);
 
+  useEffect(() => {
+    let active = true;
 
-export default function WelcomeScreen(){
+    async function checkSession() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
+      if (!active) return;
 
-return (
+      if (session) {
+        router.replace("/home");
+        return;
+      }
 
-<View style={styles.container}>
+      setCheckingSession(false);
+    }
 
+    checkSession();
 
-<View style={styles.content}>
+    return () => {
+      active = false;
+    };
+  }, []);
 
+  if (checkingSession) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
-<View style={styles.logo}>
+  return (
+    <View style={styles.container}>
+      <View style={styles.content}>
+        <Image
+          source={require("../assets/spootehbai-logo.jpg")}
+          style={styles.cover}
+        />
 
-<Text style={styles.logoText}>
-♪
-</Text>
+        <Text style={styles.title}>Playlist sa mga Bai</Text>
 
-</View>
+        <Text style={styles.subtitle}>
+          Bali e diskubre lang imong mga paborito nga kanta.
+        </Text>
 
+        <AppButton
+          title="Sugdi Na(Log in)"
+          onPress={() => router.push("/login")}
+        />
 
+        <TouchableOpacity
+          style={styles.registerBtn}
+          onPress={() => router.push("/register")}
+        >
+          <Text style={styles.registerText}>Buhat og account (Register)</Text>
+        </TouchableOpacity>
+      </View>
 
-<Text style={styles.title}>
-Playlist sa mga Bai
-</Text>
-
-
-
-<Text style={styles.subtitle}>
-Bali e diskubre lang imong mga paborito nga kanta.
-</Text>
-
-
-
-<AppButton
-
-title="Sugdi Na"
-
-onPress={() => router.replace("/login")}
-
-/>
-
-
-</View>
-
-
-
-<Text style={styles.footer}>
-Music Playlist App
-</Text>
-
-
-</View>
-
-);
-
+      <Text style={styles.footer}>Music Playlist App</Text>
+    </View>
+  );
 }
 
-
-
 const styles = StyleSheet.create({
-
-container:{
-
-flex:1,
-
-backgroundColor:"#000000",
-
-justifyContent:"space-between",
-
-padding:spacing.xl,
-
-},
-
-
-content:{
-
-flex:1,
-
-justifyContent:"center",
-
-alignItems:"center",
-
-},
-
-
-logo:{
-
-width:84,
-
-height:84,
-
-borderRadius:radius.xl,
-
-backgroundColor:"#00FF66",
-
-justifyContent:"center",
-
-alignItems:"center",
-
-marginBottom:spacing.lg,
-
-},
-
-
-logoText:{
-
-color:"#000000",
-
-fontSize:42,
-
-fontWeight:"800",
-
-},
-
-
-title:{
-
-color:"#FFFFFF",
-
-fontSize:34,
-
-fontWeight:"800",
-
-marginBottom:spacing.sm,
-
-},
-
-
-subtitle:{
-
-color:"#AAAAAA",
-
-fontSize:16,
-
-lineHeight:24,
-
-textAlign:"center",
-
-maxWidth:320,
-
-marginBottom:spacing.xl,
-
-},
-
-
-footer:{
-
-color:"#777777",
-
-textAlign:"center",
-
-},
-
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+    justifyContent: "space-between",
+    padding: spacing.xl,
+  },
+  centered: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  content: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  cover: {
+    width: 120,
+    height: 120,
+    borderRadius: radius.xl,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    marginBottom: spacing.lg,
+  },
+  title: {
+    color: colors.text,
+    fontSize: 34,
+    fontWeight: "800",
+    marginBottom: spacing.sm,
+    textAlign: "center",
+  },
+  subtitle: {
+    color: colors.textSecondary,
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: "center",
+    maxWidth: 320,
+    marginBottom: spacing.xl,
+  },
+  registerBtn: {
+    marginTop: spacing.md,
+    padding: spacing.sm,
+  },
+  registerText: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  footer: {
+    color: colors.textMuted,
+    textAlign: "center",
+  },
 });

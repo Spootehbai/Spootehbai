@@ -1,21 +1,30 @@
-
 import {
+  Alert,
   FlatList,
   Image,
   Pressable,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
-
 import { router } from "expo-router";
 import { songs } from "../data/songs";
+import { supabase } from "../lib/supabase";
+import { colors, spacing, radius } from "../constants/theme";
 
 export default function HomeScreen() {
+  async function handleLogout() {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      Alert.alert("Error", error.message);
+      return;
+    }
+    router.replace("/login");
+  }
 
   const renderSong = ({ item: song }) => (
     <Pressable
-      key={song.id}
       style={({ pressed }) => [
         styles.card,
         pressed && styles.pressed,
@@ -27,23 +36,12 @@ export default function HomeScreen() {
         })
       }
     >
-      <Image
-        source={song.image}
-        style={styles.image}
-      />
+      <Image source={song.image} style={styles.image} />
 
       <View style={styles.info}>
-        <Text style={styles.songTitle}>
-          {song.title}
-        </Text>
-
-        <Text style={styles.artist}>
-          {song.artist}
-        </Text>
-
-        <Text style={styles.album}>
-          {song.album}
-        </Text>
+        <Text style={styles.songTitle}>{song.title}</Text>
+        <Text style={styles.artist}>{song.artist}</Text>
+        <Text style={styles.album}>{song.album}</Text>
       </View>
     </Pressable>
   );
@@ -52,16 +50,36 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <FlatList
         data={songs}
-        keyExtractor={(song) => song.id}
+        keyExtractor={(song) => String(song.id)}
         renderItem={renderSong}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.list}
         ListHeaderComponent={
           <View>
-            <Text style={styles.title}>
-              Spootehbai Playlist
-            </Text>
+            <View style={styles.topBar}>
+              <TouchableOpacity
+                style={styles.navButton}
+                onPress={() => router.push("/profile")}
+              >
+                <Text style={styles.navButtonText}>Profile</Text>
+              </TouchableOpacity>
 
+              <TouchableOpacity
+                style={styles.navButton}
+                onPress={() => router.push("/users")}
+              >
+                <Text style={styles.navButtonText}>Friends</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.logoutChip}
+                onPress={handleLogout}
+              >
+                <Text style={styles.logoutChipText}>Log Out</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.title}>Spootehbai Playlist</Text>
             <Text style={styles.subtitle}>
               Pili og kanta aron makita ang mga detalye
             </Text>
@@ -75,33 +93,73 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.background,
   },
 
   list: {
-    paddingTop: 60,
-    paddingHorizontal: 20,
-    paddingBottom: 30,
+    paddingTop: spacing.xl + 24,
+    paddingHorizontal: spacing.md + 4,
+    paddingBottom: spacing.lg + 6,
+  },
+
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+
+  navButton: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.sm + 4,
+    paddingVertical: spacing.xs + 3,
+    borderRadius: radius.sm,
+  },
+
+  navButtonText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  logoutChip: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    paddingHorizontal: spacing.sm + 4,
+    paddingVertical: spacing.xs + 3,
+    borderRadius: radius.sm,
+  },
+
+  logoutChipText: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: "700",
   },
 
   title: {
-    color: "#00FF66",
+    color: colors.primary,
     fontSize: 32,
     fontWeight: "900",
-    marginBottom: 10,
+    marginBottom: spacing.sm + 2,
   },
 
   subtitle: {
-    color: "#AAAAAA",
+    color: colors.textSecondary,
     fontSize: 14,
-    marginBottom: 25,
+    marginBottom: spacing.lg,
   },
 
   card: {
-    backgroundColor: "#1F1F1F",
-    padding: 15,
-    borderRadius: 15,
-    marginBottom: 15,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm + 7,
+    borderRadius: radius.md + 3,
+    marginBottom: spacing.sm + 7,
     flexDirection: "row",
     alignItems: "center",
   },
@@ -113,8 +171,8 @@ const styles = StyleSheet.create({
   image: {
     width: 80,
     height: 80,
-    borderRadius: 10,
-    marginRight: 15,
+    borderRadius: radius.sm + 2,
+    marginRight: spacing.sm + 7,
   },
 
   info: {
@@ -122,20 +180,20 @@ const styles = StyleSheet.create({
   },
 
   songTitle: {
-    color: "#FFFFFF",
+    color: colors.text,
     fontSize: 18,
     fontWeight: "800",
   },
 
   artist: {
-    color: "#00FF66",
+    color: colors.primary,
     fontSize: 14,
-    marginTop: 6,
+    marginTop: spacing.xs + 2,
   },
 
   album: {
-    color: "#AAAAAA",
+    color: colors.textSecondary,
     fontSize: 12,
-    marginTop: 4,
+    marginTop: spacing.xs,
   },
 });
