@@ -1,10 +1,10 @@
 import { Stack } from "expo-router";
+import { MusicProvider } from "../context/MusicContext";
 
 
 export default function RootLayout(){
-
 return (
-
+<MusicProvider>
 <Stack
 
 screenOptions={{
@@ -37,12 +37,9 @@ name="home"
 <Stack.Screen 
 name="details/[id]"
 />
-
-
-
-
+<Stack.Screen name="queue" />
 </Stack>
-
+</MusicProvider>
 );
 
 }
