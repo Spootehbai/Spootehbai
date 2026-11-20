@@ -1,9 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { songs } from "./songs";
+import { getSongById as getCatalogSongById, loadCatalog } from "./catalog";
 
 const LEGACY_HOME_STATE_KEY = "@spootehbai/home-state";
 const HOME_STATE_KEY = (uid) => `${LEGACY_HOME_STATE_KEY}/${uid}`;
-const songsById = new Map(songs.map((song) => [song.id, song]));
 const homeStateListeners = new Set();
 // Keep recent tracks and resume positions across app launches.
 let homeState = {
@@ -14,8 +14,11 @@ let homeStateLoadPromise = null;
 let homeStateUserId = null;
 
 function getSongById(id) {
-  const song = songsById.get(id);
+  return getCatalogSongById(id);
+}
 
+function requireSong(id) {
+  const song = getSongById(id);
   if (!song) {
     throw new Error(`Unknown song ID in home data: ${id}`);
   }
@@ -24,7 +27,7 @@ function getSongById(id) {
 }
 
 export function getSongsByIds(ids) {
-  return ids.map(getSongById);
+  return ids.map(getSongById).filter(Boolean);
 }
 
 export function getHomeState() {
@@ -64,6 +67,8 @@ export function loadHomeState(userId) {
 
   if (!homeStateLoadPromise) {
     homeStateLoadPromise = (async () => {
+      await loadCatalog();
+
       const stateKey = HOME_STATE_KEY(userId);
       const savedState = await AsyncStorage.getItem(stateKey);
       const legacyState = savedState
@@ -90,14 +95,14 @@ export function loadHomeState(userId) {
         homeState = {
           recentSongIds: [...new Set(
             parsedState.recentSongIds.filter(
-              (id) => typeof id === "string" && songsById.has(id)
+              (id) => typeof id === "string" && getSongById(id)
             )
           )].slice(0, 5),
           continueListening: parsedState.continueListening
             .filter((item) =>
               item &&
               typeof item.songId === "string" &&
-              songsById.has(item.songId) &&
+              getSongById(item.songId) &&
               Number.isFinite(item.currentTime) &&
               Number.isFinite(item.duration) &&
               item.duration > 0 &&
@@ -147,7 +152,7 @@ function moveSongToRecent(songId) {
 }
 
 export async function recordPlaybackStarted(songId, userId) {
-  getSongById(songId);
+  requireSong(songId);
   await loadHomeState(userId);
   moveSongToRecent(songId);
   publishHomeState();
@@ -155,7 +160,7 @@ export async function recordPlaybackStarted(songId, userId) {
 }
 
 export async function savePlaybackProgress(songId, currentTime, duration, userId) {
-  getSongById(songId);
+  requireSong(songId);
 
   if (
     !Number.isFinite(currentTime) ||
