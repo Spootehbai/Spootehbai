@@ -28,7 +28,7 @@ import {
   recordPlaybackStarted,
   savePlaybackProgress,
 } from "../../data/home";
-import { songs } from "../../data/songs";
+import { getSongById } from "../../data/catalog";
 
 export default function DetailsScreen() {
   const { account } = useAuth();
@@ -45,9 +45,7 @@ export default function DetailsScreen() {
       ? requestedStartAt
       : 0;
 
-  const song = songs.find(
-    (item) => item.id === songId
-  );
+  const song = getSongById(songId);
   const audioSource = song?.audioSource ?? null;
   const player = useAudioPlayer(audioSource, { updateInterval: 500 });
   const status = useAudioPlayerStatus(player);

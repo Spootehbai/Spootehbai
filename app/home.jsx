@@ -7,6 +7,7 @@ import {
   FlatList,
   Image,
   ImageBackground,
+  Linking,
   Modal,
   Pressable,
   Share,
@@ -30,16 +31,10 @@ import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../data/AuthContext";
 
 import {
-  genreMoods,
   clearListeningHistory,
   getHomeState,
   loadHomeState,
-  madeForYouPlaylist,
-  newReleases,
-  popularArtists,
-  recommendedPlaylists,
   subscribeToHomeState,
-  trendingSongs,
 } from "../data/home";
 import {
   demoMessages,
@@ -57,6 +52,20 @@ import {
   suggestedUsers,
   toggleFollowUser,
 } from "../data/social";
+import {
+  didCatalogLoadFail,
+  getAllSongs,
+  loadCatalog,
+} from "../data/catalog";
+import {
+  fetchDeezerGenreTracks,
+  fetchDeezerHomeData,
+} from "../data/apiSongs";
+import {
+  loadSavedSongs,
+  subscribeToSavedSongs,
+  toggleSavedSong,
+} from "../data/savedSongs";
 import { songs } from "../data/songs";
 
 const Tab = createBottomTabNavigator();
@@ -86,13 +95,38 @@ function openSong(song, autoplay = false, startAt = 0) {
 }
 
 function openPlaylist(playlist) {
+  if (playlist.deezerUrl) {
+    openDeezerLink(playlist.deezerUrl, "playlist");
+    return;
+  }
+
   router.push({
     pathname: "/playlists/[id]",
     params: { id: playlist.id },
   });
 }
 
-function SongRow({ song, rank, showAlbum = false, trailing }) {
+function openDeezerLink(url, contentType) {
+  if (!url) {
+    return;
+  }
+
+  Linking.openURL(url).catch((error) => {
+    Alert.alert(
+      `Could not open ${contentType}`,
+      error instanceof Error ? error.message : "Try again later."
+    );
+  });
+}
+
+function SongRow({
+  song,
+  rank,
+  showAlbum = false,
+  trailing,
+  isSaved,
+  onToggleSaved,
+}) {
   return (
     <View style={styles.songRow}>
       {rank ? <Text style={styles.rank}>{rank}</Text> : null}
@@ -120,6 +154,27 @@ function SongRow({ song, rank, showAlbum = false, trailing }) {
           ) : null}
         </View>
       </Pressable>
+      {onToggleSaved ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            isSaved
+              ? `Remove ${song.title} from your library`
+              : `Add ${song.title} to your library`
+          }
+          onPress={() => onToggleSaved(song.id)}
+          style={({ pressed }) => [
+            styles.savedSongButton,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons
+            name={isSaved ? "bookmark" : "bookmark-outline"}
+            size={20}
+            color={isSaved ? "#00FF66" : "#AAAAAA"}
+          />
+        </Pressable>
+      ) : null}
       {trailing}
     </View>
   );
@@ -134,12 +189,218 @@ function SectionHeading({ title, action }) {
   );
 }
 
+function useCatalogSongs() {
+  const [catalogSongs, setCatalogSongs] = useState(getAllSongs);
+  const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    loadCatalog()
+      .then(() => {
+        if (isMounted) {
+          setCatalogSongs(getAllSongs());
+          setLoadFailed(didCatalogLoadFail());
+        }
+      })
+      .catch((error) => {
+        console.error("Could not load the song catalog:", error);
+        if (isMounted) {
+          setCatalogSongs(getAllSongs());
+          setLoadFailed(true);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  return { catalogSongs, loading, loadFailed };
+}
+
+function useSavedSongs() {
+  const { account } = useAuth();
+  const [savedState, setSavedState] = useState({ userId: null, songIds: [] });
+  const [loading, setLoading] = useState(Boolean(account?.uid));
+  const [loadError, setLoadError] = useState(null);
+  const savedSongIds =
+    savedState.userId === account?.uid ? savedState.songIds : [];
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!account?.uid) {
+      setSavedState({ userId: null, songIds: [] });
+      setLoading(false);
+      setLoadError(null);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    setLoading(true);
+    setLoadError(null);
+    setSavedState({ userId: account.uid, songIds: [] });
+    const unsubscribe = subscribeToSavedSongs((nextSongIds) => {
+      if (isMounted) {
+        setSavedState({ userId: account.uid, songIds: nextSongIds });
+      }
+    });
+
+    loadSavedSongs(account.uid)
+      .then((nextSongIds) => {
+        if (isMounted) {
+          setSavedState({ userId: account.uid, songIds: nextSongIds });
+        }
+      })
+      .catch((error) => {
+        console.error("Could not load saved songs:", error);
+        if (isMounted) {
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Could not load your saved songs."
+          );
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [account?.uid]);
+
+  const toggleSong = async (songId) => {
+    if (!account?.uid) {
+      Alert.alert("Log in required", "Log in to save songs to your library.");
+      return;
+    }
+
+    try {
+      await toggleSavedSong(songId, account.uid);
+    } catch (error) {
+      Alert.alert(
+        "Library update failed",
+        error instanceof Error ? error.message : "Could not update your library."
+      );
+    }
+  };
+
+  return {
+    account,
+    savedSongIds,
+    loading,
+    loadError,
+    toggleSong,
+  };
+}
+
 function HomeTab() {
   const { account } = useAuth();
   const [listeningHistory, setListeningHistory] = useState(getHomeState);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState(null);
-  const [activeMoodId, setActiveMoodId] = useState(genreMoods[0]?.id);
+  const [deezerData, setDeezerData] = useState(null);
+  const [deezerLoading, setDeezerLoading] = useState(true);
+  const [deezerError, setDeezerError] = useState(null);
+  const [activeGenreId, setActiveGenreId] = useState(null);
+  const [genreTracks, setGenreTracks] = useState([]);
+  const [genreTracksLoading, setGenreTracksLoading] = useState(false);
+  const [genreTracksError, setGenreTracksError] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchDeezerHomeData()
+      .then((data) => {
+        if (isMounted) {
+          setDeezerData(data);
+          setDeezerError(
+            data.failedSections.length > 0
+              ? "Some Deezer Home sections could not be loaded."
+              : null
+          );
+        }
+      })
+      .catch((error) => {
+        console.error("Could not load Deezer Home data:", error);
+        if (isMounted) {
+          setDeezerError(
+            error instanceof Error
+              ? error.message
+              : "Could not load Deezer Home data."
+          );
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setDeezerLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      deezerData?.genres.length &&
+      !deezerData.genres.some((genre) => genre.id === activeGenreId)
+    ) {
+      setActiveGenreId(deezerData.genres[0].id);
+    }
+  }, [activeGenreId, deezerData]);
+
+  useEffect(() => {
+    if (!activeGenreId) {
+      setGenreTracks([]);
+      return;
+    }
+
+    let isMounted = true;
+    setGenreTracksLoading(true);
+    setGenreTracksError(null);
+
+    fetchDeezerGenreTracks(activeGenreId)
+      .then((tracks) => {
+        if (isMounted) {
+          setGenreTracks(tracks);
+        }
+      })
+      .catch((error) => {
+        console.error("Could not load Deezer genre tracks:", error);
+        if (isMounted) {
+          setGenreTracks([]);
+          setGenreTracksError(
+            error instanceof Error
+              ? error.message
+              : "Could not load tracks for this genre."
+          );
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setGenreTracksLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeGenreId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -176,14 +437,14 @@ function HomeTab() {
     };
   }, [account?.uid]);
 
-  const activeMood = genreMoods.find((mood) => mood.id === activeMoodId);
   const recentSongs = listeningHistory.recentlyPlayed;
   const continueListening = listeningHistory.continueListening;
-  const moodSongs = activeMood
-    ? activeMood.songIds
-        .map((id) => songs.find((song) => song.id === id))
-        .filter(Boolean)
-    : [];
+  const trendingSongs = deezerData?.trendingSongs || [];
+  const chartedAlbums = deezerData?.chartedAlbums || [];
+  const deezerPlaylists = deezerData?.playlists || [];
+  const popularArtists = deezerData?.popularArtists || [];
+  const genres = deezerData?.genres || [];
+  const featuredPlaylist = deezerPlaylists[0];
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -194,33 +455,56 @@ function HomeTab() {
         <Text style={styles.eyebrow}>SPOOTEHBAI</Text>
         <Text style={styles.title}>Good music, bai.</Text>
         <Text style={styles.subtitle}>Your playlist starts here.</Text>
+        {deezerLoading ? (
+          <ActivityIndicator
+            color="#00FF66"
+            size="small"
+            style={styles.homeApiLoading}
+          />
+        ) : null}
+        {deezerError ? (
+          <Text style={[styles.catalogWarning, styles.homeApiWarning]}>
+            {deezerError}
+          </Text>
+        ) : null}
 
         <View style={styles.section}>
-          <SectionHeading title="Made for you" action="Daily mix" />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Open ${madeForYouPlaylist.title}`}
-            onPress={() => openPlaylist(madeForYouPlaylist)}
-            style={({ pressed }) => [
-              styles.dailyMixCard,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Image source={madeForYouPlaylist.image} style={styles.dailyMixImage} />
-            <View style={styles.dailyMixInfo}>
-              <Text style={styles.dailyMixEyebrow}>YOUR PERSONAL MIX</Text>
-              <Text numberOfLines={1} style={styles.dailyMixTitle}>
-                {madeForYouPlaylist.title}
-              </Text>
-              <Text numberOfLines={2} style={styles.dailyMixDescription}>
-                {madeForYouPlaylist.description}
-              </Text>
-              <View style={styles.dailyMixAction}>
-                <Ionicons name="play" size={13} color="#001A0A" />
-                <Text style={styles.dailyMixActionText}>Explore mix</Text>
+          <SectionHeading title="Featured playlist" action="Deezer charts" />
+          {featuredPlaylist ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Open playlist ${featuredPlaylist.title}`}
+              onPress={() => openPlaylist(featuredPlaylist)}
+              style={({ pressed }) => [
+                styles.dailyMixCard,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Image
+                source={featuredPlaylist.image}
+                style={styles.dailyMixImage}
+              />
+              <View style={styles.dailyMixInfo}>
+                <Text style={styles.dailyMixEyebrow}>FEATURED ON DEEZER</Text>
+                <Text numberOfLines={1} style={styles.dailyMixTitle}>
+                  {featuredPlaylist.title}
+                </Text>
+                <Text numberOfLines={2} style={styles.dailyMixDescription}>
+                  {featuredPlaylist.description}
+                </Text>
+                <View style={styles.dailyMixAction}>
+                  <Ionicons name="open-outline" size={13} color="#001A0A" />
+                  <Text style={styles.dailyMixActionText}>Open playlist</Text>
+                </View>
               </View>
-            </View>
-          </Pressable>
+            </Pressable>
+          ) : (
+            <Text style={styles.emptyHomeText}>
+              {deezerLoading
+                ? "Loading Deezer playlists..."
+                : "No featured playlist is available right now."}
+            </Text>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -327,8 +611,8 @@ function HomeTab() {
               trailing={
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`Play ${song.title}`}
-                  accessibilityHint="Opens the player and starts playback if audio is available."
+                  accessibilityLabel={`Play preview of ${song.title}`}
+                  accessibilityHint="Opens the player and starts playback if a preview is available."
                   onPress={() => openSong(song, true)}
                   style={({ pressed }) => [
                     styles.playButton,
@@ -340,52 +624,59 @@ function HomeTab() {
               }
             />
           ))}
+          {!deezerLoading && trendingSongs.length === 0 ? (
+            <Text style={styles.emptyHomeText}>
+              Trending songs are unavailable right now.
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.section}>
-          <SectionHeading title="New releases" action="Recently added" />
+          <SectionHeading title="Trending albums" action="Deezer charts" />
           <FlatList
-            data={newReleases}
+            data={chartedAlbums}
             horizontal
-            keyExtractor={(song) => song.id}
+            keyExtractor={(album) => album.id}
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.horizontalList}
-            renderItem={({ item: song }) => (
+            renderItem={({ item: album }) => (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Open ${song.title}`}
-                onPress={() => openSong(song)}
+                accessibilityLabel={`Open ${album.title} on Deezer`}
+                onPress={() => openDeezerLink(album.deezerUrl, "album")}
                 style={({ pressed }) => [
                   styles.releaseCard,
                   pressed && styles.pressed,
                 ]}
               >
                 <View>
-                  <Image source={song.image} style={styles.releaseImage} />
+                  <Image source={album.image} style={styles.releaseImage} />
                   <View style={styles.newBadge}>
-                    <Text style={styles.newBadgeText}>NEW</Text>
+                    <Text style={styles.newBadgeText}>CHART</Text>
                   </View>
                 </View>
                 <Text numberOfLines={1} style={styles.recentTitle}>
-                  {song.title}
+                  {album.title}
                 </Text>
                 <Text numberOfLines={1} style={styles.recentArtist}>
-                  {song.artist}
+                  {album.artist}
                 </Text>
               </Pressable>
             )}
             ListEmptyComponent={
               <Text style={styles.emptyHomeText}>
-                New songs will appear here.
+                {deezerLoading
+                  ? "Loading Deezer albums..."
+                  : "Chart albums are unavailable right now."}
               </Text>
             }
           />
         </View>
 
         <View style={styles.section}>
-          <SectionHeading title="Recommended playlists" action="For your mood" />
+          <SectionHeading title="Popular playlists" action="Deezer charts" />
           <FlatList
-            data={recommendedPlaylists}
+            data={deezerPlaylists.slice(1)}
             horizontal
             keyExtractor={(playlist) => playlist.id}
             showsHorizontalScrollIndicator={false}
@@ -406,7 +697,7 @@ function HomeTab() {
                   style={styles.playlistBackground}
                 >
                   <View style={styles.playlistOverlay}>
-                    <Text style={styles.playlistEyebrow}>SPOOTEHBAI MIX</Text>
+                    <Text style={styles.playlistEyebrow}>DEEZER CHART</Text>
                     <Text numberOfLines={1} style={styles.playlistTitle}>
                       {playlist.title}
                     </Text>
@@ -414,7 +705,7 @@ function HomeTab() {
                       {playlist.description}
                     </Text>
                     <Text style={styles.playlistCount}>
-                      {playlist.songs.length} songs
+                      {playlist.songCount} songs
                     </Text>
                   </View>
                 </ImageBackground>
@@ -422,7 +713,9 @@ function HomeTab() {
             )}
             ListEmptyComponent={
               <Text style={styles.emptyHomeText}>
-                Playlists will appear here.
+                {deezerLoading
+                  ? "Loading Deezer playlists..."
+                  : "Chart playlists are unavailable right now."}
               </Text>
             }
           />
@@ -437,32 +730,47 @@ function HomeTab() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.horizontalList}
             renderItem={({ item: artist }) => (
-              <View style={styles.artistCard}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${artist.name} on Deezer`}
+                onPress={() => openDeezerLink(artist.deezerUrl, "artist")}
+                style={({ pressed }) => [
+                  styles.artistCard,
+                  pressed && styles.pressed,
+                ]}
+              >
                 <Image source={artist.image} style={styles.artistImage} />
                 <Text numberOfLines={2} style={styles.artistName}>
                   {artist.name}
                 </Text>
-              </View>
+              </Pressable>
             )}
+            ListEmptyComponent={
+              <Text style={styles.emptyHomeText}>
+                {deezerLoading
+                  ? "Loading Deezer artists..."
+                  : "Popular artists are unavailable right now."}
+              </Text>
+            }
           />
         </View>
 
         <View style={styles.section}>
-          <SectionHeading title="Genres and moods" action="Explore" />
+          <SectionHeading title="Genres" action="Deezer" />
           <FlatList
-            data={genreMoods}
+            data={genres}
             horizontal
-            keyExtractor={(mood) => mood.id}
+            keyExtractor={(genre) => genre.id}
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.moodList}
-            renderItem={({ item: mood }) => {
-              const isSelected = mood.id === activeMoodId;
+            renderItem={({ item: genre }) => {
+              const isSelected = genre.id === activeGenreId;
 
               return (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityState={{ selected: isSelected }}
-                  onPress={() => setActiveMoodId(mood.id)}
+                  onPress={() => setActiveGenreId(genre.id)}
                   style={[
                     styles.moodChip,
                     isSelected && styles.moodChipSelected,
@@ -474,19 +782,25 @@ function HomeTab() {
                       isSelected && styles.moodChipTextSelected,
                     ]}
                   >
-                    {mood.label}
+                    {genre.label}
                   </Text>
                 </Pressable>
               );
             }}
           />
           <View style={styles.moodSongs}>
-            {moodSongs.map((song) => (
+            {genreTracksLoading ? (
+              <ActivityIndicator color="#00FF66" size="small" />
+            ) : null}
+            {genreTracks.map((song) => (
               <SongRow key={song.id} song={song} />
             ))}
-            {moodSongs.length === 0 ? (
+            {!genreTracksLoading && genreTracks.length === 0 ? (
               <Text style={styles.emptyHomeText}>
-                No songs are tagged with this mood yet.
+                {genreTracksError ||
+                  (deezerLoading
+                    ? "Loading Deezer genres..."
+                    : "No tracks are available for this genre.")}
               </Text>
             ) : null}
           </View>
@@ -498,7 +812,10 @@ function HomeTab() {
 
 function SearchTab() {
   const [query, setQuery] = useState("");
-  const filteredSongs = songs.filter((song) =>
+  const { catalogSongs, loading, loadFailed } = useCatalogSongs();
+  const savedSongs = useSavedSongs();
+  const savedSongIdSet = new Set(savedSongs.savedSongIds);
+  const filteredSongs = catalogSongs.filter((song) =>
     `${song.title} ${song.artist} ${song.album}`
       .toLowerCase()
       .includes(query.trim().toLowerCase())
@@ -516,37 +833,138 @@ function SearchTab() {
           onChangeText={setQuery}
           style={styles.searchInput}
         />
-        <FlatList
-          data={filteredSongs}
-          keyExtractor={(song) => song.id}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item: song }) => (
-            <SongRow key={song.id} song={song} showAlbum />
-          )}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>No songs found.</Text>
-          }
-        />
+        {loading ? (
+          <View style={styles.catalogLoading}>
+            <ActivityIndicator color="#00FF66" />
+          </View>
+        ) : (
+          <>
+            {loadFailed ? (
+              <Text style={styles.catalogWarning}>
+                Showing bundled songs only
+              </Text>
+            ) : null}
+            <FlatList
+              data={filteredSongs}
+              keyExtractor={(song) => song.id}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item: song }) => (
+                <SongRow
+                  key={song.id}
+                  song={song}
+                  showAlbum
+                  isSaved={savedSongIdSet.has(song.id)}
+                  onToggleSaved={savedSongs.toggleSong}
+                />
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>No songs found.</Text>
+              }
+            />
+          </>
+        )}
       </View>
     </SafeAreaView>
   );
 }
 
 function LibraryTab() {
+  const { catalogSongs, loading, loadFailed } = useCatalogSongs();
+  const savedSongs = useSavedSongs();
+  const [showSavedSongs, setShowSavedSongs] = useState(false);
+  const savedSongIdSet = new Set(savedSongs.savedSongIds);
+  const displayedSongs = showSavedSongs
+    ? catalogSongs.filter((song) => savedSongIdSet.has(song.id))
+    : catalogSongs;
+  const isListLoading = loading || (showSavedSongs && savedSongs.loading);
+
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={styles.pageContent}>
         <Text style={styles.title}>Your library</Text>
-        <Text style={styles.subtitle}>All songs in your playlist</Text>
-        <FlatList
-          data={songs}
-          keyExtractor={(song) => song.id}
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item: song }) => (
-            <SongRow key={song.id} song={song} showAlbum />
-          )}
-        />
+        <Text style={styles.subtitle}>
+          Browse songs or view your saved tracks
+        </Text>
+        <View style={styles.libraryFilters}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: !showSavedSongs }}
+            onPress={() => setShowSavedSongs(false)}
+            style={[
+              styles.libraryFilter,
+              !showSavedSongs && styles.libraryFilterSelected,
+            ]}
+          >
+            <Text
+              style={[
+                styles.libraryFilterText,
+                !showSavedSongs && styles.libraryFilterTextSelected,
+              ]}
+            >
+              All songs
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: showSavedSongs }}
+            onPress={() => setShowSavedSongs(true)}
+            style={[
+              styles.libraryFilter,
+              showSavedSongs && styles.libraryFilterSelected,
+            ]}
+          >
+            <Text
+              style={[
+                styles.libraryFilterText,
+                showSavedSongs && styles.libraryFilterTextSelected,
+              ]}
+            >
+              Saved ({savedSongs.savedSongIds.length})
+            </Text>
+          </Pressable>
+        </View>
+        {savedSongs.loadError ? (
+          <Text accessibilityRole="alert" style={styles.libraryError}>
+            {savedSongs.loadError}
+          </Text>
+        ) : null}
+        {isListLoading ? (
+          <View style={styles.catalogLoading}>
+            <ActivityIndicator color="#00FF66" />
+          </View>
+        ) : (
+          <>
+            {loadFailed ? (
+              <Text style={styles.catalogWarning}>
+                Showing bundled songs only
+              </Text>
+            ) : null}
+            <FlatList
+              data={displayedSongs}
+              keyExtractor={(song) => song.id}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item: song }) => (
+                <SongRow
+                  key={song.id}
+                  song={song}
+                  showAlbum
+                  isSaved={savedSongIdSet.has(song.id)}
+                  onToggleSaved={savedSongs.toggleSong}
+                />
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>
+                  {showSavedSongs
+                    ? savedSongs.account
+                      ? "No saved songs yet. Tap the bookmark on a song to add it."
+                      : "Log in to save songs to your library."
+                    : "No songs found."}
+                </Text>
+              }
+            />
+          </>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -1353,6 +1771,52 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
   },
+  libraryFilters: {
+    flexDirection: "row",
+    marginBottom: 14,
+    marginTop: 18,
+  },
+  libraryFilter: {
+    borderColor: "#333333",
+    borderRadius: 18,
+    borderWidth: 1,
+    marginRight: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+  },
+  libraryFilterSelected: {
+    backgroundColor: "#00FF66",
+    borderColor: "#00FF66",
+  },
+  libraryFilterText: {
+    color: "#AAAAAA",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  libraryFilterTextSelected: {
+    color: "#001A0A",
+  },
+  libraryError: {
+    color: "#FF8A8A",
+    fontSize: 12,
+    marginBottom: 10,
+  },
+  catalogLoading: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+  },
+  catalogWarning: {
+    color: "#AAAAAA",
+    fontSize: 12,
+    marginBottom: 10,
+  },
+  homeApiLoading: {
+    marginTop: 16,
+  },
+  homeApiWarning: {
+    marginHorizontal: 20,
+  },
   eyebrow: {
     color: "#00FF66",
     fontSize: 12,
@@ -1638,6 +2102,14 @@ const styles = StyleSheet.create({
   songInfo: {
     flex: 1,
     marginHorizontal: 12,
+  },
+  savedSongButton: {
+    alignItems: "center",
+    borderRadius: 18,
+    height: 36,
+    justifyContent: "center",
+    marginLeft: 4,
+    width: 36,
   },
   songTitle: {
     color: "#FFFFFF",
