@@ -79,6 +79,7 @@ export default function ProfileScreen() {
           profileData || {
             username: user.user_metadata?.username || "Listener",
             email: user.email,
+            bio: "",
             private_listening: false,
           }
         );
@@ -137,6 +138,10 @@ export default function ProfileScreen() {
 
         <Text style={styles.username}>{profile?.username}</Text>
         <Text style={styles.email}>{profile?.email}</Text>
+
+        {Boolean(profile?.bio?.trim()) && (
+          <Text style={styles.bio}>{profile.bio.trim()}</Text>
+        )}
 
         <View style={styles.badge}>
           <Text style={styles.badgeText}>
@@ -247,6 +252,14 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 14,
     marginTop: spacing.xs,
+  },
+  bio: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+    maxWidth: 300,
+    marginTop: spacing.sm + 2,
   },
   badge: {
     backgroundColor: colors.primaryLight,

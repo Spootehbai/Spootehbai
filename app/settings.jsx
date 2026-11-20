@@ -16,38 +16,69 @@ import { colors, spacing, radius } from "../constants/theme";
 export default function SettingsScreen() {
   const [userId, setUserId] = useState(null);
   const [privateListening, setPrivateListening] = useState(false);
+  const [savingPrivacy, setSavingPrivacy] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [updatingPassword, setUpdatingPassword] = useState(false);
 
   useEffect(() => {
-    (async () => {
+    let active = true;
+
+    async function loadSettings() {
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser();
-      if (!user) return;
+
+      if (!active) return;
+
+      if (userError || !user) {
+        router.replace("/login");
+        return;
+      }
+
       setUserId(user.id);
 
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
         .select("private_listening")
         .eq("id", user.id)
         .single();
 
-      if (data) setPrivateListening(Boolean(data.private_listening));
-    })();
+      if (!active) return;
+
+      if (!error && data) {
+        setPrivateListening(Boolean(data.private_listening));
+      }
+    }
+
+    loadSettings();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  async function toggleListeningPrivacy(value) {
-    setPrivateListening(value);
+  async function toggleListeningPrivacy(nextValue) {
+    if (!userId || savingPrivacy) return;
+
+    const previousValue = privateListening;
+    setPrivateListening(nextValue);
+    setSavingPrivacy(true);
+
     const { error } = await supabase
       .from("profiles")
-      .update({ private_listening: value })
+      .update({
+        private_listening: nextValue,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", userId);
 
+    setSavingPrivacy(false);
+
     if (error) {
-      setPrivateListening(!value);
-      Alert.alert("Error", "Could not update listening privacy.");
+      setPrivateListening(previousValue);
+      Alert.alert("Error", error.message || "Could not update listening privacy.");
     }
   }
 
@@ -110,13 +141,15 @@ export default function SettingsScreen() {
           <View style={styles.rowText}>
             <Text style={styles.sectionTitle}>Private Listening Session</Text>
             <Text style={styles.helperText}>
-              Hide what you're currently playing from followers and activity
-              feeds.
+              {privateListening
+                ? "Private mode is on — your listening activity is hidden from followers and activity feeds."
+                : "Hide what you're currently playing from followers and activity feeds."}
             </Text>
           </View>
           <Switch
             value={privateListening}
             onValueChange={toggleListeningPrivacy}
+            disabled={savingPrivacy}
             trackColor={{ false: colors.border, true: colors.primaryDark }}
             thumbColor={privateListening ? colors.primary : colors.white}
           />
@@ -165,8 +198,16 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity onPress={() => router.back()}>
-        <Text style={styles.backLink}>Back to Profile</Text>
+      <TouchableOpacity
+        onPress={() => router.back()}
+        style={styles.backButton}
+        activeOpacity={0.75}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <View style={styles.backRow}>
+          <Text style={styles.backArrow}>←</Text>
+          <Text style={styles.backLink}>Go Back</Text>
+        </View>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -260,11 +301,29 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
   },
+  backButton: {
+    alignSelf: "center",
+    marginTop: spacing.sm + 2,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  backRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  backArrow: {
+    color: colors.primary,
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginTop: 1,
+  },
   backLink: {
     color: colors.primary,
-    textAlign: "center",
-    marginTop: spacing.sm + 2,
     fontSize: 15,
     fontWeight: "600",
+    lineHeight: 20,
   },
 });

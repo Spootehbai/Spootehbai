@@ -70,7 +70,7 @@ export default function RegisterScreen() {
       <Text style={styles.subtitle}>Fill in the form below</Text>
 
       <TextInput
-        placeholder="Username"
+        placeholder="Display Name"
         placeholderTextColor="#9CA3AF"
         value={username}
         onChangeText={setUsername}

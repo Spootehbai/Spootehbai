@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import {
   Alert,
   Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -13,32 +16,58 @@ import { router } from "expo-router";
 import { supabase } from "../lib/supabase";
 import { colors, spacing, radius } from "../constants/theme";
 
+const BIO_MAX_LENGTH = 160;
+
 export default function EditProfileScreen() {
   const [userId, setUserId] = useState(null);
   const [username, setUsername] = useState("");
+  const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [localImageUri, setLocalImageUri] = useState(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    (async () => {
+    let isActive = true;
+
+    async function loadProfile() {
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser();
-      if (!user) return;
+
+      if (!isActive) return;
+
+      if (userError || !user) {
+        router.replace("/login");
+        return;
+      }
+
       setUserId(user.id);
 
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
-        .select("username, avatar_url")
+        .select("username, bio, avatar_url")
         .eq("id", user.id)
         .single();
 
+      if (!isActive) return;
+
+      if (error) {
+        Alert.alert("Load Error", error.message);
+      }
+
       if (data) {
         setUsername(data.username || "");
+        setBio(data.bio || "");
         setAvatarUrl(data.avatar_url || null);
       }
-    })();
+    }
+
+    loadProfile();
+
+    return () => {
+      isActive = false;
+    };
   }, []);
 
   async function pickPhoto() {
@@ -63,8 +92,9 @@ export default function EditProfileScreen() {
     }
   }
 
-async function saveProfile() {
+  async function saveProfile() {
     const cleanName = username.trim();
+    const cleanBio = bio.trim();
 
     if (!cleanName) {
       Alert.alert("Invalid Name", "Display name cannot be empty.");
@@ -98,22 +128,26 @@ async function saveProfile() {
 
         finalAvatarUrl = publicData.publicUrl;
       }
-        const { data: updatedRow, error } = await supabase
+
+      const { data: updatedRow, error } = await supabase
         .from("profiles")
         .upsert(
-            {
+          {
             id: userId,
-            username: cleanUsername,
+            username: cleanName,
+            bio: cleanBio,
             avatar_url: finalAvatarUrl,
             updated_at: new Date().toISOString(),
-            },
-            { onConflict: "id" }
+          },
+          { onConflict: "id" }
         )
-        .select("id, username, avatar_url, updated_at")
+        .select("id, username, bio, avatar_url, updated_at")
         .single();
+
       if (error) throw error;
 
       setUsername(updatedRow.username);
+      setBio(updatedRow.bio || "");
       setAvatarUrl(updatedRow.avatar_url);
       setLocalImageUri(null);
 
@@ -126,56 +160,93 @@ async function saveProfile() {
       setSaving(false);
     }
   }
+
   const displayImage = localImageUri || avatarUrl;
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Edit Profile</Text>
-
-      <TouchableOpacity onPress={pickPhoto} style={styles.avatarWrapper}>
-        <Image
-          source={
-            displayImage
-              ? { uri: displayImage }
-              : require("../assets/spootehbai-logo.jpg")
-          }
-          style={styles.avatar}
-        />
-        <Text style={styles.changePhotoText}>Change Photo</Text>
-      </TouchableOpacity>
-
-      <TextInput
-        placeholder="Username"
-        placeholderTextColor={colors.textMuted}
-        value={username}
-        onChangeText={setUsername}
-        style={styles.input}
-      />
-
-      <TouchableOpacity
-        style={styles.button}
-        onPress={saveProfile}
-        disabled={saving}
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.buttonText}>
-          {saving ? "Saving..." : "Save Changes"}
-        </Text>
-      </TouchableOpacity>
+        <Text style={styles.title}>Edit Profile</Text>
 
-      <TouchableOpacity onPress={() => router.back()}>
-        <Text style={styles.cancelLink}>Cancel</Text>
-      </TouchableOpacity>
-    </View>
+        <TouchableOpacity onPress={pickPhoto} style={styles.avatarWrapper}>
+          <Image
+            source={
+              displayImage
+                ? { uri: displayImage }
+                : require("../assets/spootehbai-logo.jpg")
+            }
+            style={styles.avatar}
+          />
+          <Text style={styles.changePhotoText}>Change Photo</Text>
+        </TouchableOpacity>
+
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>Display Name</Text>
+          <TextInput
+            placeholder="Display Name"
+            placeholderTextColor={colors.textMuted}
+            value={username}
+            onChangeText={setUsername}
+            style={styles.input}
+          />
+        </View>
+
+        <View style={styles.fieldGroup}>
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Bio</Text>
+            <Text style={styles.counter}>
+              {bio.length}/{BIO_MAX_LENGTH}
+            </Text>
+          </View>
+          <TextInput
+            placeholder="Write a short bio..."
+            placeholderTextColor={colors.textMuted}
+            value={bio}
+            onChangeText={setBio}
+            maxLength={BIO_MAX_LENGTH}
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+            style={[styles.input, styles.bioInput]}
+          />
+        </View>
+
+        <TouchableOpacity
+          style={styles.button}
+          onPress={saveProfile}
+          disabled={saving}
+        >
+          <Text style={styles.buttonText}>
+            {saving ? "Saving..." : "Save Changes"}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => router.back()}>
+          <Text style={styles.cancelLink}>Cancel</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  flex: {
     flex: 1,
+    backgroundColor: colors.background,
+  },
+  container: {
+    flexGrow: 1,
     backgroundColor: colors.background,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xl,
   },
   title: {
     color: colors.text,
@@ -200,6 +271,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
   },
+  fieldGroup: {
+    width: "100%",
+    marginBottom: spacing.md,
+  },
+  labelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.xs + 2,
+  },
+  label: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: spacing.xs + 2,
+  },
+  counter: {
+    color: colors.textMuted,
+    fontSize: 12,
+  },
   input: {
     width: "100%",
     height: 55,
@@ -209,7 +300,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
     color: colors.text,
-    marginBottom: spacing.md,
+  },
+  bioInput: {
+    height: 92,
+    paddingTop: spacing.sm + 4,
+    paddingBottom: spacing.sm + 4,
   },
   button: {
     width: "100%",
@@ -218,6 +313,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     alignItems: "center",
     justifyContent: "center",
+    marginTop: spacing.xs,
   },
   buttonText: {
     color: colors.background,
