@@ -2,6 +2,7 @@
   "expo": {
     "name": "playlist",
     "slug": "snack-941016c3-0901-485c-ae53-da407da57c32",
+    "scheme": "spootehbai",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -24,6 +25,7 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": ["expo-audio"]
   }
 }

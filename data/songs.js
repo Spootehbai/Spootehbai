@@ -2,10 +2,11 @@ export const songs = [
 
   {
     id: "1",
-    title: "Balay ni Mayang",
-    artist: "Martina Sandiego og Kyle Wong",
+    title: "Kung kita ba jud?",
+    artist: "Autotune Gods",
     album: "VISPOP 1.0",
-    image: require("../assets/balaynimayang.jpg"),
+    image: require("../assets/kungkitabajud.png"),
+    audioSource: require("../assets/audio/kungkitabajud.mp3"),
     description:
       "is a lighthearted, romantic duet that serves as a contemporary adaptation of the traditional Visayan balitaw.",
   },
@@ -13,10 +14,11 @@ export const songs = [
 
   {
     id: "2",
-    title: "In Love Ra Kutob",
-    artist: "Kurt Fick",
+    title: "Mansanitas Yow",
+    artist: "bsso tribe ft.ermie azur garma 2015",
     album: "Hahahahasulaserye",
-    image: require("../assets/inloverakutob.jpg"),
+    image: require("../assets/mansanitasyow.png"),
+    audioSource: require("../assets/audio/mansanitasYow.mp3"),
     description:
       "An acoustic R&B track capturing the pain of a one-sided attraction.",
   },
@@ -24,10 +26,11 @@ export const songs = [
 
   {
     id: "3",
-    title: "Ipanumpa Ko",
-    artist: "Oh! Caraga",
+    title: "She Got Her Molten",
+    artist: "Renelong",
     album: "Way Sukod",
-    image: require("../assets/ipanumpako.jpg"),
+    image: require("../assets/shegothermolten.png"),
+    audioSource: require("../assets/audio/shegothermolten.mp3"),
     description:
       "A sweeping, orchestral folk-pop ballad driven by rich vocal harmonies.",
   },
@@ -35,10 +38,11 @@ export const songs = [
 
   {
     id: "4",
-    title: "Perfect",
-    artist: "Ed Sheeran",
+    title: "Since Bai One",
+    artist: "Garcia-J",
     album: "Divide",
-    image: require("../assets/perfect.jpg"),
+    image: require("../assets/sincebaione.png"),
+    audioSource: require("../assets/audio/sincebaione.mp3"),
     description:
       "A romantic acoustic song about finding someone special.",
   },
@@ -46,12 +50,14 @@ export const songs = [
 
   {
     id: "5",
-    title: "Photograph",
-    artist: "Ed Sheeran",
+    title: "Stap Weyt A Minit",
+    artist: "kids0777",
     album: "X",
-    image: require("../assets/photograph.jpg"),
+    image: require("../assets/weytaminit.png"),
+    audioSource: require("../assets/audio/weytamenet.mp3"),
     description:
       "A sentimental song about memories and unforgettable moments.",
   },
+
 
 ];

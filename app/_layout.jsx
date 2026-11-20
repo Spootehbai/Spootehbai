@@ -1,10 +1,11 @@
 import { Stack } from "expo-router";
-
+import { AuthProvider } from "../data/AuthContext";
 
 export default function RootLayout(){
 
 return (
 
+<AuthProvider>
 <Stack
 
 screenOptions={{
@@ -38,10 +39,26 @@ name="home"
 name="details/[id]"
 />
 
+<Stack.Screen
+name="playlists/[id]"
+/>
+
+<Stack.Screen
+name="reset-password"
+/>
+
+<Stack.Screen
+name="change-password"
+/>
+
+<Stack.Screen
+name="delete-account"
+/>
 
 
 
 </Stack>
+</AuthProvider>
 
 );
 

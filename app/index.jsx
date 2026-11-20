@@ -1,10 +1,8 @@
+import { useEffect } from "react";
+
 import { router } from "expo-router";
 
-import {
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { AppButton } from "../components/AppButton.jsx";
 
@@ -13,10 +11,17 @@ import {
   spacing,
   radius,
 } from "../constants/theme";
+import { useAuth } from "../data/AuthContext";
 
 
 export default function WelcomeScreen(){
+const { account } = useAuth();
 
+useEffect(() => {
+  if (account) {
+    router.replace("/home");
+  }
+}, [account]);
 
 return (
 

@@ -11,53 +11,33 @@ import {
 } from "react-native";
 
 import { router } from "expo-router";
-
-import { getRegisteredUser } from "./register.jsx";
+import { useAuth } from "../data/AuthContext";
 
 
 export default function LoginScreen(){
+const { loginAccount } = useAuth();
 
 const [email,setEmail] = useState("");
 
 const [password,setPassword] = useState("");
 
+const [isLoggingIn,setIsLoggingIn] = useState(false);
 
 
-function login(){
 
-const user = getRegisteredUser();
-
-
-if(!user){
-
-Alert.alert(
-"No Account Found",
-"Please register first."
-);
-
-return;
-
-}
-
-
-if(
-email === user.email &&
-password === user.password
-){
-
-router.replace("/home");
-
-}
-
-else{
-
-Alert.alert(
-"Login Failed",
-"Incorrect email or password."
-);
-
-}
-
+async function login(){
+  setIsLoggingIn(true);
+  try {
+    await loginAccount(email, password);
+    router.replace("/home");
+  } catch (error) {
+    Alert.alert(
+      "Login Failed",
+      error instanceof Error ? error.message : "Could not log in."
+    );
+  } finally {
+    setIsLoggingIn(false);
+  }
 }
 
 
@@ -98,6 +78,10 @@ value={email}
 
 onChangeText={setEmail}
 
+autoCapitalize="none"
+
+keyboardType="email-address"
+
 style={styles.input}
 
 />
@@ -128,11 +112,13 @@ style={styles.button}
 
 onPress={login}
 
+disabled={isLoggingIn}
+
 >
 
 
 <Text style={styles.buttonText}>
-Log In
+{isLoggingIn ? "Logging in..." : "Log In"}
 </Text>
 
 
@@ -141,9 +127,9 @@ Log In
 
 
 
-<Text style={styles.forgot}>
-Forgot password?
-</Text>
+<TouchableOpacity onPress={()=>router.push("/reset-password")}>
+  <Text style={styles.forgot}>Forgot password?</Text>
+</TouchableOpacity>
 
 
 
