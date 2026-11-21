@@ -13,11 +13,16 @@
     "@react-navigation/bottom-tabs": "^7.22.0",
     "@react-navigation/native": "^7.5.2",
     "expo": "~58.0.26",
+    "expo-asset": "~58.0.21",
     "expo-audio": "~58.0.12",
     "expo-av": "^16.0.8",
+    "expo-build-properties": "~58.0.12",
+    "expo-constants": "~58.0.16",
+    "expo-font": "~58.0.12",
     "expo-image-picker": "~58.0.10",
     "expo-linking": "~58.0.17",
     "expo-router": "~58.0.32",
+    "expo-splash-screen": "~58.0.14",
     "expo-status-bar": "~58.0.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -25,6 +30,16 @@
     "react-native-paper": "4.9.2",
     "react-native-safe-area-context": "~5.11.1",
     "react-native-screens": "~4.30.1"
+  },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "expo-av"
+        ],
+        "listUnknownPackages": false
+      }
+    }
   },
   "private": true
 }

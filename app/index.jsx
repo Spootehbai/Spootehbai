@@ -1,176 +1,100 @@
-import { useEffect } from "react";
 
+import React from "react";
 import { router } from "expo-router";
 
-import { StyleSheet, Text, View } from "react-native";
+import {
+  Image,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import { AppButton } from "../components/AppButton.jsx";
 
-import {
-  colors,
-  spacing,
-  radius,
-} from "../constants/theme";
-import { useAuth } from "../data/AuthContext";
+import { spacing } from "../constants/theme";
 
+export default function WelcomeScreen() {
+  return (
+    <View style={styles.container}>
+      <View style={styles.content}>
+        <Image
+          source={require("../assets/spootehbai-logo.png")}
+          style={styles.logo}
+          resizeMode="contain"
+          accessibilityLabel="Spootehbai logo"
+        />
 
-export default function WelcomeScreen(){
-const { account } = useAuth();
+        <Text style={styles.title}>
+          Spootehbai
+        </Text>
 
-useEffect(() => {
-  if (account) {
-    router.replace("/home");
-  }
-}, [account]);
+        <Text style={styles.subtitle}>
+          Bali e diskubre lang imong mga paborito nga kanta.
+        </Text>
 
-return (
+        <View style={styles.buttonWrapper}>
+          <AppButton
+            title="Sugdi Na"
+            onPress={() => router.replace("/login")}
+          />
+        </View>
+      </View>
 
-<View style={styles.container}>
-
-
-<View style={styles.content}>
-
-
-<View style={styles.logo}>
-
-<Text style={styles.logoText}>
-♪
-</Text>
-
-</View>
-
-
-
-<Text style={styles.title}>
-Playlist sa mga Bai
-</Text>
-
-
-
-<Text style={styles.subtitle}>
-Bali e diskubre lang imong mga paborito nga kanta.
-</Text>
-
-
-
-<AppButton
-
-title="Sugdi Na"
-
-onPress={() => router.replace("/login")}
-
-/>
-
-
-</View>
-
-
-
-<Text style={styles.footer}>
-Music Playlist App
-</Text>
-
-
-</View>
-
-);
-
+      <Text style={styles.footer}>
+        Good music, bai.
+      </Text>
+    </View>
+  );
 }
 
-
-
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#000000",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.xl,
+    paddingTop: 70,
+    paddingBottom: 30,
+  },
 
-container:{
+  content: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
 
-flex:1,
+  logo: {
+    width: 220,
+    height: 220,
+    marginBottom: 24,
+    borderRadius: 20,
+  },
 
-backgroundColor:"#000000",
+  title: {
+    color: "#FFFFFF",
+    fontSize: 36,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 10,
+  },
 
-justifyContent:"space-between",
+  subtitle: {
+    color: "#A9A9A9",
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: "center",
+    maxWidth: 320,
+    marginBottom: 30,
+  },
 
-padding:spacing.xl,
+  buttonWrapper: {
+    width: "100%",
+    maxWidth: 320,
+  },
 
-},
-
-
-content:{
-
-flex:1,
-
-justifyContent:"center",
-
-alignItems:"center",
-
-},
-
-
-logo:{
-
-width:84,
-
-height:84,
-
-borderRadius:radius.xl,
-
-backgroundColor:"#00FF66",
-
-justifyContent:"center",
-
-alignItems:"center",
-
-marginBottom:spacing.lg,
-
-},
-
-
-logoText:{
-
-color:"#000000",
-
-fontSize:42,
-
-fontWeight:"800",
-
-},
-
-
-title:{
-
-color:"#FFFFFF",
-
-fontSize:34,
-
-fontWeight:"800",
-
-marginBottom:spacing.sm,
-
-},
-
-
-subtitle:{
-
-color:"#AAAAAA",
-
-fontSize:16,
-
-lineHeight:24,
-
-textAlign:"center",
-
-maxWidth:320,
-
-marginBottom:spacing.xl,
-
-},
-
-
-footer:{
-
-color:"#777777",
-
-textAlign:"center",
-
-},
-
+  footer: {
+    color: "#6F6F6F",
+    textAlign: "center",
+    fontSize: 14,
+  },
 });

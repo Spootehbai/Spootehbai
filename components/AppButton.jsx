@@ -1,7 +1,9 @@
-// AppButton.jsx
+
+import React, { useRef } from "react";
 
 import {
   ActivityIndicator,
+  Animated,
   Pressable,
   StyleSheet,
   Text,
@@ -13,13 +15,13 @@ import {
   spacing,
 } from "../constants/theme";
 
-
 export function AppButton({
   title,
   onPress,
   loading = false,
   variant = "primary",
 }) {
+  const scale = useRef(new Animated.Value(1)).current;
 
   const backgroundColor =
     variant === "danger"
@@ -28,33 +30,54 @@ export function AppButton({
       ? colors.primaryLight
       : colors.primary;
 
-
   const textColor =
     variant === "secondary"
       ? colors.primaryDark
       : colors.white;
 
+  const animateScale = (toValue) => {
+    Animated.spring(scale, {
+      toValue,
+      useNativeDriver: true,
+      speed: 25,
+      bounciness: 5,
+    }).start();
+  };
 
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={loading}
-      style={({ pressed }) => [
-        styles.button,
+    <Animated.View
+      style={[
+        styles.container,
         {
-          backgroundColor,
+          transform: [{ scale }],
         },
-        pressed && styles.pressed,
       ]}
     >
-
-      {
-        loading ? (
-
+      <Pressable
+        onPress={onPress}
+        disabled={loading}
+        onPressIn={() => {
+          if (!loading) {
+            animateScale(0.94);
+          }
+        }}
+        onPressOut={() => {
+          animateScale(1);
+        }}
+        android_ripple={{
+          color: "rgba(255,255,255,0.20)",
+        }}
+        style={({ pressed }) => [
+          styles.button,
+          {
+            backgroundColor,
+          },
+          pressed && styles.pressed,
+        ]}
+      >
+        {loading ? (
           <ActivityIndicator color={textColor} />
-
         ) : (
-
           <Text
             style={[
               styles.text,
@@ -65,16 +88,16 @@ export function AppButton({
           >
             {title}
           </Text>
-
-        )
-      }
-
-    </Pressable>
+        )}
+      </Pressable>
+    </Animated.View>
   );
 }
 
-
 const styles = StyleSheet.create({
+  container: {
+    width: "100%",
+  },
 
   button: {
     minHeight: 52,
@@ -83,17 +106,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     width: "100%",
+    overflow: "hidden",
   },
-
 
   text: {
     fontSize: 16,
     fontWeight: "700",
   },
 
-
   pressed: {
-    opacity: 0.8,
+    opacity: 0.85,
   },
-
 });

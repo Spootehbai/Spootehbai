@@ -1,5 +1,6 @@
 
 import { useEffect, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
   Alert,
@@ -24,6 +25,7 @@ import {
   DefaultTheme,
 } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import AnimatedTabButton from "../components/AnimatedTabButton.jsx";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -126,6 +128,8 @@ function SongRow({
   trailing,
   isSaved,
   onToggleSaved,
+  onAddToPlaylist,
+  onRemoveFromPlaylist,
 }) {
   return (
     <View style={styles.songRow}>
@@ -173,6 +177,32 @@ function SongRow({
             size={20}
             color={isSaved ? "#00FF66" : "#AAAAAA"}
           />
+        </Pressable>
+      ) : null}
+      {onAddToPlaylist ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Add ${song.title} to a playlist`}
+          onPress={() => onAddToPlaylist(song)}
+          style={({ pressed }) => [
+            styles.savedSongButton,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons name="ellipsis-horizontal" size={23} color="#AAAAAA" />
+        </Pressable>
+      ) : null}
+      {onRemoveFromPlaylist ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Remove ${song.title} from playlist`}
+          onPress={() => onRemoveFromPlaylist(song.id)}
+          style={({ pressed }) => [
+            styles.savedSongButton,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons name="ellipsis-horizontal" size={23} color="#AAAAAA" />
         </Pressable>
       ) : null}
       {trailing}
@@ -872,100 +902,579 @@ function SearchTab() {
 function LibraryTab() {
   const { catalogSongs, loading, loadFailed } = useCatalogSongs();
   const savedSongs = useSavedSongs();
-  const [showSavedSongs, setShowSavedSongs] = useState(false);
+  const accountId = savedSongs.account?.uid;
+  const [libraryView, setLibraryView] = useState("all");
+  const [playlists, setPlaylists] = useState([]);
+  const [playlistOwner, setPlaylistOwner] = useState(null);
+  const [playlistLoading, setPlaylistLoading] = useState(true);
+  const [playlistError, setPlaylistError] = useState(null);
+  const [playlistName, setPlaylistName] = useState("");
+  const [createVisible, setCreateVisible] = useState(false);
+  const [addSong, setAddSong] = useState(null);
+  const [activePlaylistId, setActivePlaylistId] = useState(null);
+  const [playlistSaving, setPlaylistSaving] = useState(false);
+  const [playlistMenu, setPlaylistMenu] = useState(null);
+  const [renamePlaylist, setRenamePlaylist] = useState(null);
+  const [renameText, setRenameText] = useState("");
+  const [addSongsVisible, setAddSongsVisible] = useState(false);
+  const [songSearch, setSongSearch] = useState("");
+  const [songAction, setSongAction] = useState(null);
+
+  const storageKey = accountId ? `spootehbai:playlists:${accountId}` : null;
+
+  useEffect(() => {
+    let active = true;
+    setPlaylistLoading(true);
+    setPlaylistOwner(null);
+    setPlaylists([]);
+    setActivePlaylistId(null);
+    setPlaylistError(null);
+
+    if (!storageKey) {
+      setPlaylistLoading(false);
+      return () => { active = false; };
+    }
+
+    AsyncStorage.getItem(storageKey)
+      .then((value) => {
+        if (!active) return;
+        const parsed = value ? JSON.parse(value) : [];
+        setPlaylists(Array.isArray(parsed) ? parsed : []);
+        setPlaylistOwner(storageKey);
+      })
+      .catch((error) => {
+        if (active) {
+          setPlaylistError("Could not load your playlists on this device.");
+          console.error("Playlist loading failed:", error);
+        }
+      })
+      .finally(() => {
+        if (active) setPlaylistLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [storageKey]);
+
+  const playlistsReady = Boolean(storageKey && playlistOwner === storageKey && !playlistLoading);
+  const selectedPlaylist = playlists.find((playlist) => playlist.id === activePlaylistId);
   const savedSongIdSet = new Set(savedSongs.savedSongIds);
-  const displayedSongs = showSavedSongs
-    ? catalogSongs.filter((song) => savedSongIdSet.has(song.id))
-    : catalogSongs;
-  const isListLoading = loading || (showSavedSongs && savedSongs.loading);
+  const displayedSongs =
+    libraryView === "saved"
+      ? catalogSongs.filter((song) => savedSongIdSet.has(song.id))
+      : libraryView === "playlist" && selectedPlaylist
+        ? catalogSongs.filter((song) => selectedPlaylist.songIds.includes(song.id))
+        : catalogSongs;
+  const isListLoading = loading || (libraryView === "saved" && savedSongs.loading);
+
+  // Save first, then update the visible list, so failed writes do not appear successful.
+  const savePlaylists = async (nextPlaylists) => {
+    if (!playlistsReady || playlistSaving) return false;
+    setPlaylistSaving(true);
+    setPlaylistError(null);
+    try {
+      await AsyncStorage.setItem(storageKey, JSON.stringify(nextPlaylists));
+      setPlaylists(nextPlaylists);
+      return true;
+    } catch (error) {
+      console.error("Playlist saving failed:", error);
+      setPlaylistError("Could not save playlist changes. Please try again.");
+      Alert.alert("Couldn't save", "Your playlist changes couldn't be saved on this device.");
+      return false;
+    } finally {
+      setPlaylistSaving(false);
+    }
+  };
+
+  const createPlaylist = async () => {
+    const name = playlistName.trim();
+    if (!name) {
+      Alert.alert("Playlist name needed", "Enter a name for your playlist.");
+      return;
+    }
+    if (name.length > 50) {
+      Alert.alert("Name too long", "Use 50 characters or fewer.");
+      return;
+    }
+    const newPlaylist = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      name,
+      songIds: [],
+    };
+    if (await savePlaylists([...playlists, newPlaylist])) {
+      setPlaylistName("");
+      setCreateVisible(false);
+      setActivePlaylistId(newPlaylist.id);
+      setLibraryView("playlist");
+    }
+  };
+
+  const addToPlaylist = async (playlistId) => {
+    if (!addSong) return;
+    const playlist = playlists.find((item) => item.id === playlistId);
+    if (!playlist) return;
+    if (playlist.songIds.includes(addSong.id)) {
+      Alert.alert("Already added", `This song is already in ${playlist.name}.`);
+      return;
+    }
+    const nextPlaylists = playlists.map((item) =>
+      item.id === playlistId
+        ? { ...item, songIds: [...item.songIds, addSong.id] }
+        : item
+    );
+    if (await savePlaylists(nextPlaylists)) {
+      setAddSong(null);
+      Alert.alert("Song added", `Added to ${playlist.name}.`);
+    }
+  };
+
+  const addSongToCurrentPlaylist = async (song) => {
+    if (!selectedPlaylist || playlistSaving) return;
+    if (selectedPlaylist.songIds.includes(song.id)) return;
+    await savePlaylists(playlists.map((item) =>
+      item.id === selectedPlaylist.id
+        ? { ...item, songIds: [...item.songIds, song.id] }
+        : item
+    ));
+  };
+
+  const savePlaylistName = async () => {
+    const name = renameText.trim();
+    if (!renamePlaylist || !name) {
+      Alert.alert("Playlist name needed", "Enter a name for your playlist.");
+      return;
+    }
+    if (name.length > 50) return;
+    if (await savePlaylists(playlists.map((item) =>
+      item.id === renamePlaylist.id ? { ...item, name } : item
+    ))) {
+      setRenamePlaylist(null);
+    }
+  };
+
+  const removeFromPlaylist = (songId) => {
+    if (!selectedPlaylist) return;
+    Alert.alert("Remove song?", `Remove this song from ${selectedPlaylist.name}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        onPress: () => savePlaylists(playlists.map((item) =>
+          item.id === selectedPlaylist.id
+            ? { ...item, songIds: item.songIds.filter((id) => id !== songId) }
+            : item
+        )),
+      },
+    ]);
+  };
+
+  const deletePlaylist = (playlist) => {
+    Alert.alert(
+      "Delete playlist?",
+      `Delete "${playlist.name}"? Your songs will remain in the song catalog and Saved Songs.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            if (await savePlaylists(playlists.filter((item) => item.id !== playlist.id))) {
+              if (activePlaylistId === playlist.id) {
+                setActivePlaylistId(null);
+                setLibraryView("playlists");
+              }
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const tabs = [
+    { id: "all", title: "All songs" },
+    { id: "saved", title: `Saved (${savedSongs.savedSongIds.length})` },
+    { id: "playlists", title: `Playlists (${playlists.length})` },
+  ];
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={styles.pageContent}>
         <Text style={styles.title}>Your library</Text>
-        <Text style={styles.subtitle}>
-          Browse songs or view your saved tracks
-        </Text>
-        <View style={styles.libraryFilters}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ selected: !showSavedSongs }}
-            onPress={() => setShowSavedSongs(false)}
-            style={[
-              styles.libraryFilter,
-              !showSavedSongs && styles.libraryFilterSelected,
-            ]}
-          >
-            <Text
+        <Text style={styles.subtitle}>Browse, save, and organize your music.</Text>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.libraryFilters}
+          style={styles.libraryFilterScroll}
+        >
+          {tabs.map((tab) => (
+            <Pressable
+              key={tab.id}
+              accessibilityRole="button"
+              accessibilityState={{ selected: libraryView === tab.id || (tab.id === "playlists" && libraryView === "playlist") }}
+              onPress={() => { setLibraryView(tab.id); setActivePlaylistId(null); }}
               style={[
-                styles.libraryFilterText,
-                !showSavedSongs && styles.libraryFilterTextSelected,
+                styles.libraryFilter,
+                (libraryView === tab.id || (tab.id === "playlists" && libraryView === "playlist")) && styles.libraryFilterSelected,
               ]}
             >
-              All songs
-            </Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ selected: showSavedSongs }}
-            onPress={() => setShowSavedSongs(true)}
-            style={[
-              styles.libraryFilter,
-              showSavedSongs && styles.libraryFilterSelected,
-            ]}
-          >
-            <Text
-              style={[
+              <Text style={[
                 styles.libraryFilterText,
-                showSavedSongs && styles.libraryFilterTextSelected,
-              ]}
-            >
-              Saved ({savedSongs.savedSongIds.length})
-            </Text>
-          </Pressable>
-        </View>
+                (libraryView === tab.id || (tab.id === "playlists" && libraryView === "playlist")) && styles.libraryFilterTextSelected,
+              ]}>{tab.title}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+
         {savedSongs.loadError ? (
-          <Text accessibilityRole="alert" style={styles.libraryError}>
-            {savedSongs.loadError}
-          </Text>
+          <Text accessibilityRole="alert" style={styles.libraryError}>{savedSongs.loadError}</Text>
         ) : null}
-        {isListLoading ? (
-          <View style={styles.catalogLoading}>
-            <ActivityIndicator color="#00FF66" />
+        {playlistError ? (
+          <Text accessibilityRole="alert" style={styles.libraryError}>{playlistError}</Text>
+        ) : null}
+
+        {(libraryView === "playlists" || libraryView === "playlist") ? (
+          <View style={{ flex: 1 }}>
+            <View style={styles.playlistToolbar}>
+              {libraryView === "playlist" ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Back to playlists"
+                  onPress={() => { setActivePlaylistId(null); setLibraryView("playlists"); }}
+                  style={styles.playlistBackButton}
+                >
+                  <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+                  <Text style={styles.playlistBackText}>Playlists</Text>
+                </Pressable>
+              ) : (
+                <Text style={styles.playlistHeading}>My playlists</Text>
+              )}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Create playlist"
+                disabled={!playlistsReady || playlistSaving}
+                onPress={() => setCreateVisible(true)}
+                style={[styles.createPlaylistButton, (!playlistsReady || playlistSaving) && styles.pressed]}
+              >
+                <Ionicons name="add" size={18} color="#001A0A" />
+                <Text style={styles.createPlaylistText}>Create playlist</Text>
+              </Pressable>
+            </View>
+            {playlistLoading ? (
+              <ActivityIndicator color="#00FF66" style={{ marginTop: 25 }} />
+            ) : !accountId ? (
+              <Text style={styles.emptyText}>Log in to create playlists.</Text>
+            ) : libraryView === "playlist" && selectedPlaylist ? (
+              <>
+                <View style={styles.playlistDetailsHeader}>
+                  <Text style={styles.playlistDetailsTitle}>{selectedPlaylist.name}</Text>
+                  <Text style={styles.playlistDetailsCount}>{selectedPlaylist.songIds.length} songs</Text>
+                  <View style={styles.spotifyPlaylistActions}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Add songs to this playlist"
+                      onPress={() => { setSongSearch(""); setAddSongsVisible(true); }}
+                      style={styles.spotifyAddSongsButton}
+                    >
+                      <Ionicons name="add-circle-outline" size={22} color="#001A0A" />
+                      <Text style={styles.createPlaylistText}>Add songs</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Playlist options"
+                      onPress={() => setPlaylistMenu(selectedPlaylist)}
+                      style={styles.spotifyDotsButton}
+                    >
+                      <Ionicons name="ellipsis-horizontal" size={26} color="#FFFFFF" />
+                    </Pressable>
+                  </View>
+                </View>
+                <FlatList
+                  data={displayedSongs}
+                  keyExtractor={(song) => song.id}
+                  showsVerticalScrollIndicator={false}
+                  renderItem={({ item: song }) => (
+                    <SongRow
+                      song={song}
+                      showAlbum
+                      onRemoveFromPlaylist={(songId) => setSongAction({ song, inPlaylist: true })}
+                    />
+                  )}
+                  ListEmptyComponent={<Text style={styles.emptyText}>No songs yet. Open All songs and tap + to add songs.</Text>}
+                />
+              </>
+            ) : (
+              <FlatList
+                data={playlists}
+                keyExtractor={(playlist) => playlist.id}
+                showsVerticalScrollIndicator={false}
+                renderItem={({ item: playlist }) => (
+                  <View style={styles.playlistItem}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open playlist ${playlist.name}`}
+                      onPress={() => { setActivePlaylistId(playlist.id); setLibraryView("playlist"); }}
+                      style={styles.playlistOpenButton}
+                    >
+                      <View style={styles.playlistItemIcon}>
+                        <Ionicons name="musical-notes" size={21} color="#00FF66" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text numberOfLines={1} style={styles.playlistItemTitle}>{playlist.name}</Text>
+                        <Text style={styles.playlistItemSubtitle}>{playlist.songIds.length} songs</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={19} color="#888888" />
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Options for ${playlist.name}`}
+                      onPress={() => setPlaylistMenu(playlist)}
+                      style={styles.playlistItemDelete}
+                    >
+                      <Ionicons name="ellipsis-horizontal" size={23} color="#FFFFFF" />
+                    </Pressable>
+                  </View>
+                )}
+                ListEmptyComponent={<Text style={styles.emptyText}>No playlists yet. Tap Create to make your first playlist.</Text>}
+              />
+            )}
           </View>
+        ) : isListLoading ? (
+          <View style={styles.catalogLoading}><ActivityIndicator color="#00FF66" /></View>
         ) : (
           <>
-            {loadFailed ? (
-              <Text style={styles.catalogWarning}>
-                Showing bundled songs only
-              </Text>
-            ) : null}
+            {loadFailed ? <Text style={styles.catalogWarning}>Showing bundled songs only</Text> : null}
             <FlatList
               data={displayedSongs}
               keyExtractor={(song) => song.id}
               showsVerticalScrollIndicator={false}
               renderItem={({ item: song }) => (
                 <SongRow
-                  key={song.id}
                   song={song}
                   showAlbum
                   isSaved={savedSongIdSet.has(song.id)}
                   onToggleSaved={savedSongs.toggleSong}
+                  onAddToPlaylist={() => {
+                    if (!playlistsReady) {
+                      Alert.alert("Playlists unavailable", "Please log in and allow your playlists to load.");
+                      return;
+                    }
+                    setSongAction({ song, inPlaylist: false });
+                  }}
                 />
               )}
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>
-                  {showSavedSongs
-                    ? savedSongs.account
-                      ? "No saved songs yet. Tap the bookmark on a song to add it."
-                      : "Log in to save songs to your library."
-                    : "No songs found."}
-                </Text>
-              }
+              ListEmptyComponent={<Text style={styles.emptyText}>
+                {libraryView === "saved"
+                  ? "No saved songs yet. Tap the bookmark on a song to add it."
+                  : "No songs found."}
+              </Text>}
             />
           </>
         )}
       </View>
+
+      {/* Spotify-style playlist action menu */}
+      <Modal visible={Boolean(playlistMenu)} transparent animationType="fade"
+        onRequestClose={() => setPlaylistMenu(null)}>
+        <View style={styles.spotifySheetOverlay}>
+          <Pressable style={styles.spotifySheetDismiss} onPress={() => setPlaylistMenu(null)} />
+          <View style={styles.spotifySheet}>
+            <Text numberOfLines={1} style={styles.spotifySheetTitle}>{playlistMenu?.name}</Text>
+            <Pressable style={styles.spotifySheetAction} onPress={() => {
+              setRenameText(playlistMenu?.name || "");
+              setRenamePlaylist(playlistMenu);
+              setPlaylistMenu(null);
+            }}>
+              <Ionicons name="pencil-outline" size={21} color="#FFFFFF" />
+              <Text style={styles.spotifySheetActionText}>Rename playlist</Text>
+            </Pressable>
+            <Pressable style={styles.spotifySheetAction} onPress={() => {
+              const item = playlistMenu;
+              setPlaylistMenu(null);
+              if (item) deletePlaylist(item);
+            }}>
+              <Ionicons name="trash-outline" size={21} color="#FF7777" />
+              <Text style={[styles.spotifySheetActionText, { color: "#FF7777" }]}>Delete playlist</Text>
+            </Pressable>
+            <Pressable style={styles.spotifySheetCancel} onPress={() => setPlaylistMenu(null)}>
+              <Text style={styles.playlistCancelText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Rename playlist without modifying its saved song IDs */}
+      <Modal visible={Boolean(renamePlaylist)} transparent animationType="fade"
+        onRequestClose={() => setRenamePlaylist(null)}>
+        <View style={styles.playlistModalOverlay}>
+          <View style={styles.playlistModalCard}>
+            <Text style={styles.playlistModalTitle}>Rename playlist</Text>
+            <TextInput value={renameText} onChangeText={setRenameText} autoFocus
+              selectTextOnFocus maxLength={50} style={styles.playlistNameInput}
+              placeholder="Playlist name" placeholderTextColor="#777777" />
+            <View style={styles.playlistModalActions}>
+              <Pressable style={styles.playlistCancelButton} onPress={() => setRenamePlaylist(null)}>
+                <Text style={styles.playlistCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable disabled={playlistSaving} style={styles.playlistConfirmButton} onPress={savePlaylistName}>
+                <Text style={styles.playlistConfirmText}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Browse the catalog from inside a playlist, like Add to this playlist */}
+      <Modal visible={addSongsVisible} transparent animationType="slide"
+        onRequestClose={() => setAddSongsVisible(false)}>
+        <SafeAreaView style={styles.spotifyAddSongsScreen}>
+          <View style={styles.spotifyAddSongsHeader}>
+            <Pressable onPress={() => setAddSongsVisible(false)} accessibilityLabel="Close add songs">
+              <Ionicons name="arrow-back" size={25} color="#FFFFFF" />
+            </Pressable>
+            <Text style={styles.spotifyAddSongsTitle}>Add to this playlist</Text>
+            <Pressable onPress={() => setAddSongsVisible(false)}>
+              <Text style={{ color: "#00FF66", fontWeight: "800" }}>Done</Text>
+            </Pressable>
+          </View>
+          <TextInput
+            style={[styles.searchInput, { marginHorizontal: 16, marginTop: 8 }]}
+            value={songSearch} onChangeText={setSongSearch}
+            placeholder="Search songs or artists" placeholderTextColor="#777777"
+            autoCapitalize="none" />
+          <FlatList data={catalogSongs.filter((song) =>
+            `${song.title} ${song.artist}`.toLowerCase().includes(songSearch.trim().toLowerCase())
+          )} keyExtractor={(song) => song.id}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item: song }) => {
+              const added = Boolean(selectedPlaylist?.songIds.includes(song.id));
+              return (
+                <View style={styles.spotifySearchSongRow}>
+                  <Image source={song.image} style={styles.spotifySearchSongImage} />
+                  <View style={{ flex: 1 }}>
+                    <Text numberOfLines={1} style={styles.songTitle}>{song.title}</Text>
+                    <Text numberOfLines={1} style={styles.recentArtist}>{song.artist}</Text>
+                  </View>
+                  <Pressable disabled={added || playlistSaving} accessibilityLabel={added ? "Already in playlist" : `Add ${song.title}`}
+                    onPress={() => addSongToCurrentPlaylist(song)} style={styles.spotifyDotsButton}>
+                    <Ionicons name={added ? "checkmark-circle" : "add-circle-outline"}
+                      size={27} color={added ? "#00FF66" : "#FFFFFF"} />
+                  </Pressable>
+                </View>
+              );
+            }}
+            ListEmptyComponent={<Text style={styles.emptyText}>No matching songs found.</Text>} />
+        </SafeAreaView>
+      </Modal>
+
+      {/* Context actions on individual songs */}
+      <Modal visible={Boolean(songAction)} transparent animationType="fade"
+        onRequestClose={() => setSongAction(null)}>
+        <View style={styles.spotifySheetOverlay}>
+          <Pressable style={styles.spotifySheetDismiss} onPress={() => setSongAction(null)} />
+          <View style={styles.spotifySheet}>
+            <Text numberOfLines={1} style={styles.spotifySheetTitle}>{songAction?.song.title}</Text>
+            {songAction?.inPlaylist ? (
+              <Pressable style={styles.spotifySheetAction} onPress={() => {
+                const songId = songAction.song.id;
+                setSongAction(null);
+                removeFromPlaylist(songId);
+              }}>
+                <Ionicons name="remove-circle-outline" size={22} color="#FFFFFF" />
+                <Text style={styles.spotifySheetActionText}>Remove from this playlist</Text>
+              </Pressable>
+            ) : (
+              <Pressable style={styles.spotifySheetAction} onPress={() => {
+                const song = songAction.song;
+                setSongAction(null);
+                setAddSong(song);
+              }}>
+                <Ionicons name="add-circle-outline" size={22} color="#FFFFFF" />
+                <Text style={styles.spotifySheetActionText}>Add to playlist</Text>
+              </Pressable>
+            )}
+            <Pressable style={styles.spotifySheetCancel} onPress={() => setSongAction(null)}>
+              <Text style={styles.playlistCancelText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={createVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCreateVisible(false)}
+      >
+        <View style={styles.playlistModalOverlay}>
+          <View style={styles.playlistModalCard}>
+            <Text style={styles.playlistModalTitle}>Create playlist</Text>
+            <Text style={styles.playlistModalHint}>Give your new playlist a name.</Text>
+            <TextInput
+              accessibilityLabel="New playlist name"
+              value={playlistName}
+              onChangeText={setPlaylistName}
+              placeholder="e.g. My favorites"
+              placeholderTextColor="#777777"
+              maxLength={50}
+              autoFocus
+              style={styles.playlistNameInput}
+            />
+            <View style={styles.playlistModalActions}>
+              <Pressable onPress={() => { setCreateVisible(false); setPlaylistName(""); }} style={styles.playlistCancelButton}>
+                <Text style={styles.playlistCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                disabled={playlistSaving || !playlistsReady}
+                onPress={createPlaylist}
+                style={styles.playlistConfirmButton}
+              >
+                <Text style={styles.playlistConfirmText}>{playlistSaving ? "Saving..." : "Create"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(addSong)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAddSong(null)}
+      >
+        <View style={styles.playlistModalOverlay}>
+          <View style={styles.playlistModalCard}>
+            <Text style={styles.playlistModalTitle}>Add to playlist</Text>
+            <Text style={styles.playlistModalHint} numberOfLines={2}>
+              {addSong ? `${addSong.title} · ${addSong.artist}` : ""}
+            </Text>
+            <ScrollView style={{ maxHeight: 270 }}>
+              {playlists.map((playlist) => (
+                <Pressable
+                  key={playlist.id}
+                  accessibilityRole="button"
+                  disabled={playlistSaving}
+                  onPress={() => addToPlaylist(playlist.id)}
+                  style={styles.playlistPickerRow}
+                >
+                  <Ionicons name="musical-notes" size={19} color="#00FF66" />
+                  <Text numberOfLines={1} style={styles.playlistPickerText}>{playlist.name}</Text>
+                  {addSong && playlist.songIds.includes(addSong.id) ? (
+                    <Ionicons name="checkmark" size={19} color="#00FF66" />
+                  ) : (
+                    <Ionicons name="add" size={19} color="#AAAAAA" />
+                  )}
+                </Pressable>
+              ))}
+            </ScrollView>
+            {playlists.length === 0 ? (
+              <Text style={styles.playlistModalHint}>No playlists yet. Close this menu, then tap Create playlist in Your Library.</Text>
+            ) : null}
+            <Pressable onPress={() => setAddSong(null)} style={styles.playlistCancelButton}>
+              <Text style={styles.playlistCancelText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1739,6 +2248,7 @@ export default function HomeScreen() {
             tabBarInactiveTintColor: "#777777",
             tabBarLabelStyle: styles.tabLabel,
             tabBarStyle: styles.tabBar,
+            tabBarButton: (props) => <AnimatedTabButton {...props} />,
             tabBarIcon: ({ color, size, focused }) => (
               <Ionicons
                 name={tabIcons[route.name][focused ? 0 : 1]}
@@ -1759,6 +2269,79 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  spotifyPlaylistActions: { flexDirection: "row", alignItems: "center", gap: 16, marginTop: 12 },
+  spotifyAddSongsButton: { flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "#00FF66", borderRadius: 24, paddingHorizontal: 18, paddingVertical: 11 },
+  spotifyDotsButton: { padding: 10, alignItems: "center", justifyContent: "center" },
+  spotifySheetOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.58)" },
+  spotifySheetDismiss: { flex: 1 },
+  spotifySheet: { backgroundColor: "#202020", borderTopLeftRadius: 22, borderTopRightRadius: 22,
+    paddingHorizontal: 22, paddingTop: 22, paddingBottom: 35 },
+  spotifySheetTitle: { color: "#FFFFFF", fontWeight: "800", fontSize: 18, marginBottom: 12 },
+  spotifySheetAction: { flexDirection: "row", alignItems: "center", gap: 16, paddingVertical: 17 },
+  spotifySheetActionText: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" },
+  spotifySheetCancel: { paddingVertical: 16, alignItems: "center", marginTop: 10,
+    borderTopWidth: 1, borderTopColor: "#353535" },
+  spotifyAddSongsScreen: { flex: 1, backgroundColor: "#0B0B0B" },
+  spotifyAddSongsHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14 },
+  spotifyAddSongsTitle: { color: "#FFFFFF", fontSize: 17, fontWeight: "800" },
+  spotifySearchSongRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 8 },
+  spotifySearchSongImage: { width: 52, height: 52, borderRadius: 7, backgroundColor: "#222222" },
+  playlistToolbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+    marginBottom: 14,
+  },
+  playlistHeading: { color: "#FFFFFF", fontSize: 19, fontWeight: "800" },
+  createPlaylistButton: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: "#00FF66", paddingHorizontal: 13, paddingVertical: 9,
+    borderRadius: 20,
+  },
+  createPlaylistText: { color: "#001A0A", fontSize: 13, fontWeight: "800" },
+  playlistBackButton: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 },
+  playlistBackText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
+  playlistItem: {
+    flexDirection: "row", alignItems: "center", backgroundColor: "#151515",
+    borderRadius: 12, marginBottom: 10,
+  },
+  playlistOpenButton: { flex: 1, flexDirection: "row", alignItems: "center", padding: 12, gap: 12 },
+  playlistItemIcon: {
+    height: 43, width: 43, borderRadius: 9, backgroundColor: "#223328",
+    alignItems: "center", justifyContent: "center",
+  },
+  playlistItemTitle: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
+  playlistItemSubtitle: { color: "#999999", fontSize: 12, marginTop: 4 },
+  playlistItemDelete: { paddingHorizontal: 16, paddingVertical: 18 },
+  playlistDetailsHeader: { marginBottom: 14, gap: 7 },
+  playlistDetailsTitle: { color: "#FFFFFF", fontSize: 23, fontWeight: "900" },
+  playlistDetailsCount: { color: "#999999", fontSize: 13 },
+  playlistDeleteButton: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", paddingVertical: 8 },
+  playlistDeleteText: { color: "#FF7777", fontSize: 13, fontWeight: "700" },
+  playlistModalOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.78)",
+    justifyContent: "center", paddingHorizontal: 25,
+  },
+  playlistModalCard: { backgroundColor: "#1A1A1A", borderRadius: 18, padding: 22, gap: 14 },
+  playlistModalTitle: { color: "#FFFFFF", fontSize: 21, fontWeight: "800" },
+  playlistModalHint: { color: "#AAAAAA", fontSize: 13, lineHeight: 19 },
+  playlistNameInput: {
+    color: "#FFFFFF", backgroundColor: "#2A2A2A", borderRadius: 11,
+    borderWidth: 1, borderColor: "#444444", padding: 13, fontSize: 16,
+  },
+  playlistModalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 12 },
+  playlistCancelButton: { paddingVertical: 11, paddingHorizontal: 15, alignItems: "center" },
+  playlistCancelText: { color: "#CCCCCC", fontWeight: "700" },
+  playlistConfirmButton: { backgroundColor: "#00FF66", paddingVertical: 11, paddingHorizontal: 21, borderRadius: 10 },
+  playlistConfirmText: { color: "#001A0A", fontWeight: "800" },
+  playlistPickerRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingVertical: 14, borderBottomColor: "#333333", borderBottomWidth: 1,
+  },
+  playlistPickerText: { flex: 1, color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
   screen: {
     flex: 1,
     backgroundColor: "#000000",
@@ -1771,14 +2354,25 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
   },
+  libraryFilterScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
+    height: 60,
+    marginTop: 18,
+    marginBottom: 14,
+  },
   libraryFilters: {
     flexDirection: "row",
-    marginBottom: 14,
-    marginTop: 18,
+    alignItems: "center",
+    paddingVertical: 5,
+    paddingRight: 12,
   },
   libraryFilter: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
     borderColor: "#333333",
-    borderRadius: 18,
+    borderRadius: 22,
     borderWidth: 1,
     marginRight: 8,
     paddingHorizontal: 16,
@@ -1791,7 +2385,9 @@ const styles = StyleSheet.create({
   libraryFilterText: {
     color: "#AAAAAA",
     fontSize: 12,
+    lineHeight: 18,
     fontWeight: "700",
+    textAlign: "center",
   },
   libraryFilterTextSelected: {
     color: "#001A0A",
