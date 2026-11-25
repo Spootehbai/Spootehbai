@@ -18,7 +18,7 @@ export default function WelcomeScreen() {
     <View style={styles.container}>
       <View style={styles.content}>
         <Image
-          source={require("../assets/spootehbai-logo.png")}
+          source={require("../assets/spootehbai-brand-logo.png")}
           style={styles.logo}
           resizeMode="contain"
           accessibilityLabel="Spootehbai logo"
